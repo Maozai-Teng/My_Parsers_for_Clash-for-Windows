@@ -1,5 +1,11 @@
 # My Parsers for Clash-for-Windows
-[![release](https://badgen.net/github/release/Maozai-Teng/My_Parsers_for_Clash-for-Windows/)](https://github.com/Maozai-Teng/My_Parsers_for_Clash-for-Windows/releases)
+
+<p align="center">
+  <a href="https://github.com/Maozai-Teng/My_Parsers_for_Clash-for-Windows/releases">
+    <img src="https://badgen.net/github/release/Maozai-Teng/My_Parsers_for_Clash-for-Windows/" alt="release">
+  </a>
+</p>
+
 
 参考各路大神的教程和示例，按照自己需求制作的一个预处理（Parsers）配置，与大家共享使用❤️️，有建议的欢迎留言~😄
 # 主要功能特色
