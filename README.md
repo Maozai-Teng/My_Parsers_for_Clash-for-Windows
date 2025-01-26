@@ -1,4 +1,5 @@
 # My Parsers for Clash-for-Windows
+https://img.shields.io/github/v/release/Maozai-Teng/My_Parsers_for_Clash-for-Windows
 参考各路大神的教程和示例，按照自己需求制作的一个预处理（Parsers）配置，与大家共享使用❤️️，有建议的欢迎留言~😄
 # 主要功能特色
 - 完全重新设计节点线路规划
