@@ -8,7 +8,7 @@
 
 <div align="center">
   ╔═════════════════════════════════════════════════════════════════════╗<br><br>
-  <strong>⚡️ 强烈建议先使用大佬开发的 <a href="https://github.com/kayaladream/Clash-Core-Change" style="color: #ff6b6b;">Clash-Core-Change</a> 将内核升级至最新mihomo内核，解锁更多新特性与强大功能！⚡️</strong><br><br>
+  <strong>⚡️ 强烈建议使用大佬开发的 <a href="https://github.com/kayaladream/Clash-Core-Change" style="color: #ff6b6b;">Clash-Core-Change</a> 将CFW升级至最新mihomo内核，解锁更多新特性与强大功能！⚡️</strong><br><br>
   <strong>🔴4.0.3版本之后，只适配更新mihomo内核之后的版本。如果坚持使用premium内核，请看末尾的错误BUG部分🔴<strong><br><br>
   ╚═════════════════════════════════════════════════════════════════════╝<br><br><br>
 
