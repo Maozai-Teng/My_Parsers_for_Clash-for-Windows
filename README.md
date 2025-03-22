@@ -9,13 +9,15 @@
 <div align="center">
   ╔═════════════════════════════════════════════════════════════════════╗<br><br>
   <strong>⚡️ 强烈建议使用大佬开发的 <a href="https://github.com/kayaladream/Clash-Core-Change" style="color: #ff6b6b;">Clash-Core-Change</a> 将CFW升级至最新mihomo内核，解锁更多新特性与强大功能！⚡️</strong><br><br>
-  <strong>🔴5.0.0版本之后，只适配更新mihomo内核之后的版本。如果坚持使用premium内核，请看末尾的错误BUG部分🔴<strong><br><br>
+  <strong>🔴5.0.0版本之后，只适配更新mihomo内核之后的版本。如果坚持使用premium内核，请看末尾的已知问题部分🔴<strong><br><br>
   ╚═════════════════════════════════════════════════════════════════════╝<br><br><br>
 
 </div>
 <br>
 
 参考各路大神的教程和示例，按照自己需求制作的一个Clash for Windows（CFW）的预处理（Parsers）配置，与大家共享使用❤️️，有建议的欢迎留言~😄
+<br><br>
+
 
 # 主要功能特色
 - 完全重新设计节点线路规划
@@ -40,6 +42,8 @@
     - 使用大神们提供的规则集（rule-providers），省却自己配置时间和精力
     - 个人自定义规则，方便自己增删改查
 - 更多有趣有用的功能，期待你的发掘和提供……
+<br><br>
+
 
 # 目前节点组合设计
 - 节点选择——默认是负载均衡，可自己手动选择任何一个方案
@@ -51,36 +55,43 @@
 - 负载均衡——load-balance：均衡使用分组内的节点
 - 延迟选优——url-test：自动选择延迟最低的节点
 - 故障转移——fallback：节点故障时自动切换下一个
+<br><br>
+
 
 # 界面效果
 ![QQ截图20240816012425](https://github.com/user-attachments/assets/18e0cafd-2988-42a4-8f47-c402e4ce247e)
 ![QQ截图20240816015658](https://github.com/user-attachments/assets/3172616c-6da7-4d4b-9848-d2c4b2c38617)
+<br><br>
 
-# 使用软件
+
+# 适配软件
 我用的是Clash for Windows汉化版，理论上支持CFW配置文件预处理的版本均可使用
 [下载地址](https://github.com/Z-Siqi/Clash-for-Windows_Chinese)
+<br><br>
 
 
-# 使用用法
+# 使用方法
 直接复制clash parsers.yaml里面的内容到clash的“设置--配置--配置文件预处理”/“setting--profiles--parsers”进行粘贴，执行“配置”/“profiles”页面的更新即可
 
 ![QQ截图20240816001436](https://github.com/user-attachments/assets/542f81de-30cd-40ed-ad36-3df83f5f1359)
 ![QQ截图20240816014338](https://github.com/user-attachments/assets/5fc959d6-fed3-43d9-8274-f5bbfc070ed9)
 ![QQ截图20240816014519](https://github.com/user-attachments/assets/d8c3b7ce-5e48-4b62-b6e4-02a2bb10af53)
+<br><br>
 
-# 删除用法
+# 还原方法
 直接把clash的“设置--配置--配置文件预处理”/“setting--profiles--parsers”里面内容全部删掉，再执行一次“配置”/“profiles”页面的更新即可
+<br><br>
 
-
-# 可能出现的错误和BUG
+# 已知问题
 - 出现rule-providers报错
     - 这种情况一般出现在首次安装使用。原因是一些rule-providers的新建和更新本身就需要代理。
       - 解决方法：先使用CFW默认设置成功代理上网，能够科学上网了再把Parsers配置按照使用方法进行操作，后续使用一般就不会出现了
 - 坚持使用原先的premium内核，目前已知问题
     - nameserver-policy项目报错
       - 解决方法：定位找到nameserver-policy，把他随便改个什么名字，使其不生效即可
+- …………
 - 暂时没有了，如果发现欢迎留言交流~
-
+<br><br>
 
 # 特别鸣谢
 来自网络的各方力量
@@ -93,6 +104,8 @@
 
 @Loyalsoldier [Loyalsoldier规则集](https://github.com/Loyalsoldier/clash-rules)
 
+@kayaladream [Clash for Windows切换内核工具](https://github.com/Loyalsoldier/clash-rules)
+<br><br>
 
 # 特别声明
 本软件仅供学习和研究网络技术之用，用户必须遵守所在地区的法律法规，不得用于非法用途，本软件不对任何人的行为负责。 
