@@ -1,4 +1,4 @@
-# My Parsers for Clash-for-Windows
+# My Parsers for Clash for Windows
 
 <p align="center">
   <a href="https://github.com/Maozai-Teng/My_Parsers_for_Clash-for-Windows/releases">
