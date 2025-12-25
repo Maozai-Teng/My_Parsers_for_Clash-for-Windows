@@ -25,11 +25,11 @@ jobs:
             const latest = await github.rest.repos.getLatestRelease({ owner, repo });
 
             const asset = latest.data.assets.find(a =>
-              a.name.startsWith("clash.parsers") && a.name.endsWith(".yaml")
+              a.name.startsWith("clash-parsers") && a.name.endsWith(".yaml")
             );
 
             if (!asset) {
-              core.setFailed("❌ 没找到 clash.parsers*.yaml 这个 release 文件");
+              core.setFailed("❌ 没找到 clash-parsers-*.yaml 文件");
               return;
             }
 
@@ -44,13 +44,13 @@ jobs:
 
       - name: Remove Old Parser Files
         run: |
-          find . -maxdepth 1 -name "clash.parsers*.yaml" ! -name "${{ steps.get_asset.outputs.asset_name }}" -delete
+          find . -maxdepth 1 -name "clash-parsers-*.yaml" ! -name "${{ steps.get_asset.outputs.asset_name }}" -delete
 
       - name: Commit & Push
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
 
-          git add clash.parsers*.yaml
+          git add clash-parsers-*.yaml
           git commit -m "Update parser to ${{ steps.get_asset.outputs.asset_name }}" || echo "Nothing to commit"
           git push
