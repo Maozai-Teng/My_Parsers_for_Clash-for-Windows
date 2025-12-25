@@ -1,0 +1,558 @@
+parsers: # array
+  # - reg: ^.*$ 匹配所有订阅，或  - url: https://example.com/profile.yaml 指定订阅
+  - reg: ^.*$
+    # 删除服务商提供的策略组和规则
+    code: |
+      // ==============================================================================
+      // 1. 常量定义区域
+      // ==============================================================================
+
+      // 过滤检查：定义需要删除的包含关键词的节点
+      const KEYWORDS_TO_CHECK = new Set(['25倍']);
+
+      // 重命名移除：定义需要从节点名称中移除的字符串
+      // 作用：只删除名称中的文字，不删除节点本身。例如 "香港 [2.0]" -> "香港"。
+      const RENAME_REMOVE_KEYWORDS = new Set([
+          'Lv3 ',
+          ' [2.0]',
+          '🇭🇰', '🇹🇼', '🇸🇪', '🇩🇪', '🇨🇳', '🇯🇵', '🇸🇬', '🇺🇸', '🇰🇷', '🇦🇺', '🇮🇳',
+          '🇨🇦', '🇲🇽', '🇮🇹', '🇳🇱', '🇪🇸', '🇬🇧', '🇫🇷', '🇮🇱', '🇸🇦', '🇿🇦', '🇦🇪',
+          '🇧🇷', '🇨🇱', '🇨🇴', '🇨🇭', '🇹🇭',
+          '[Trojan]',
+          '[倍率:0.8]', '[倍率:0.9]', '[倍率:1]',
+      ]);
+
+      // 重命名添加：在节点名称前添加emoji图标
+      const KEYWORDS_TO_ADD = {
+          '香港|港': '🐬 ',
+          '台湾|台': '🐸 ',
+          '澳门': '🐹 ',
+          '美国|加拿大': '🦅 ',
+          '日本': '🐔 ',
+          '韩国': '🐶 ',
+          '印度|泰国': '🐘 ',
+          '新加坡|马来西亚': '🐵 ',
+          '澳大利亚': '🐨 ',
+          '迪拜|沙特阿拉伯|阿联酋|以色列|南非': '🐪 ',
+          '巴西|墨西哥|智利|哥伦比亚': '🦜 ',
+          '俄罗斯': '🐻 ',
+          '德国|英国|瑞典|法国|荷兰|土耳其|意大利|西班牙|瑞士': '🦄 '
+      };
+
+      // 文本替换：将节点名称中的某些词替换为其他词
+      const REPLACE_MAP = {
+          '傻逼': 'SB'
+      };
+
+      // 规则定义：规则列表,包含自定义规则和引用的规则集 (RULE-SET)
+      const rulesConfig = [
+          // 自定义程序规则
+          "PROCESS-NAME,DownloadServer.exe,DIRECT",                    // PikPak 直连
+          "PROCESS-NAME,PikPak.exe,DIRECT",                            // PikPak 直连
+          "PROCESS-NAME,WinStore.App.exe,DIRECT",                      // Microsoft store 直连
+          "PROCESS-NAME,ForzaHorizon5.exe,DIRECT",                     // Forza Horizon 5 直连
+          "PROCESS-NAME,SearchApp.exe,DIRECT",                         // SearchApp 直连
+
+          // 自定义规则
+          "DOMAIN-SUFFIX,agaghhh.cc,DIRECT",                            // x1080x 相关域名直连
+          // "DOMAIN-SUFFIX,nvidia.com,DIRECT",                    
+          "DOMAIN-SUFFIX,rewards.bing.com,DIRECT",                     // Bing 相关域名直连
+          "DOMAIN-SUFFIX,adobe.io,REJECT",                             // 防止 adobe 弹窗
+          "DOMAIN,lcs-cops.adobe.io,DIRECT",                           // 防止 adobe 弹窗
+
+          "DOMAIN-KEYWORD,dmm,🎌 日本节点",
+          "DOMAIN-KEYWORD,javdb,😻 我要涩涩",                           // javdb
+          "DOMAIN-SUFFIX,gzankun.com,😻 我要涩涩",                      // javdb 预览视频源
+          "DOMAIN-SUFFIX,jdbstatic.com,😻 我要涩涩",                    // javdb 静态资源
+          // "DOMAIN-SUFFIX,urlimage.cc,🤖 人工智能",             
+          // "DOMAIN-KEYWORD,sijishe,🤖 人工智能",              
+          // "DOMAIN-SUFFIX,sjscn.cc,🤖 人工智能",              
+          // "DOMAIN-KEYWORD,sjs47,🤖 人工智能",                
+          "DOMAIN-SUFFIX,nicovideo.jp,🎌 日本节点",
+
+          // 官方规则集引用
+          "RULE-SET,privateip,DIRECT,no-resolve",
+          "RULE-SET,private,DIRECT",
+          "RULE-SET,telegramip,🚀 节点选择,no-resolve",
+          "RULE-SET,ads,REJECT",
+
+          "RULE-SET,networktest,DIRECT",
+          "RULE-SET,trackerslist,DIRECT",
+          "RULE-SET,applications,DIRECT",
+          "RULE-SET,apple-cn,DIRECT",
+          "RULE-SET,microsoft-cn,DIRECT",
+          "RULE-SET,google-cn,DIRECT",
+          "RULE-SET,xbox,DIRECT",
+          "RULE-SET,steamcn,DIRECT",
+          "RULE-SET,games-cn,DIRECT",
+
+          "RULE-SET,googlefcm,🚀 节点选择",
+          "RULE-SET,netflix,🚀 节点选择",
+          "RULE-SET,youtube,🚀 节点选择",
+          "RULE-SET,ai,🤖 人工智能",
+          "RULE-SET,media,🚀 节点选择",
+          "RULE-SET,games,🚀 节点选择",
+
+          "RULE-SET,proxy,🚀 节点选择",
+          "RULE-SET,cn,DIRECT",
+          "RULE-SET,mediaip,🚀 节点选择",
+          "RULE-SET,gamesip,DIRECT",
+          "RULE-SET,cnip,DIRECT",
+          "MATCH,🚀 节点选择"
+      ];
+
+      // ==============================================================================
+      // 2. 工具函数定义 (解耦逻辑，提高复用性)
+      // ==============================================================================
+
+      // 核心匹配工具：判断 name 是否匹配 rule
+      const checkMatch = (name, rule) => {
+          if (!name) return false;
+          // 如果规则是正则表达式，用 .test()
+          if (rule instanceof RegExp) {
+              return rule.test(name);
+          }
+          // 如果规则是普通字符串，用 .includes()
+          return name.includes(rule);
+      };
+
+      // 正则转义函数：防止字符串中的特殊字符（如 [ ] .）破坏正则结构
+      const escapeRegExp = (string) => {
+          return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      };
+
+      // 在 name 字段前面添加指定关键词
+      // 优化：使用单次正则匹配 + Map 映射，大幅提升匹配效率
+      const addKeywords = (name, regex, iconMap) => {
+          if (!name) return name;
+          // 执行一次匹配，如果命中，直接从 Map 中取出对应的图标
+          const match = name.match(regex);
+          if (match) {
+              return iconMap.get(match[0]) + name;
+          }
+          return name;
+      };
+
+      // 批量替换 name 字段中的文本
+      const replaceText = (name, replaceMap) => {
+          if (!name) return name;
+          let newName = name;
+          for (const [search, replacement] of Object.entries(replaceMap)) {
+              // 使用 replaceAll 替换所有出现的目标词
+              newName = newName.split(search).join(replacement);
+          }
+          return newName;
+      };
+
+      // ==============================================================================
+      // 3. 主逻辑入口
+      // ==============================================================================
+
+      module.exports.parse = async (raw, { axios, yaml, notify, console }, { name, url, interval, selected }) => {
+          const rawObj = yaml.parse(raw);
+
+          // [容错] 检查 rawObj 和 proxies 是否存在，避免空指针错误
+          if (!rawObj || !Array.isArray(rawObj.proxies)) {
+              return raw; // 如果数据不合法，直接返回原文
+          }
+
+          // [性能优化] 预编译 KEYWORDS_TO_ADD：构建 "关键词->图标" 映射表 和 "组合正则"
+          // 作用：将数十次正则匹配合并为一次，通过 Map O(1) 获取图标
+          const iconMap = new Map();
+          const iconKeywords = [];
+
+          Object.entries(KEYWORDS_TO_ADD).forEach(([keysStr, icon]) => {
+              keysStr.split('|').forEach(key => {
+                  iconMap.set(key, icon);
+                  iconKeywords.push(escapeRegExp(key));
+              });
+          });
+
+          // 排序：按长度降序排列，确保 "新加坡" 优先匹配，而不是只匹配到 "新"
+          iconKeywords.sort((a, b) => b.length - a.length);
+          // 生成组合正则：/香港|港|台湾|台|.../
+          const iconsRegex = new RegExp(iconKeywords.join('|'));
+
+          // [性能优化] 预编译 RENAME_REMOVE_KEYWORDS 为单一正则
+          // 作用：将 Set 中的所有词组合成一个大正则 (A|B|C)，一次性全局删除，效率极高
+          const removeKeywordsRegex = new RegExp(
+              [...RENAME_REMOVE_KEYWORDS].map(escapeRegExp).join('|'),
+              'g'
+          );
+
+          // [步骤 1] 预过滤：彻底移除包含特定关键词（如'25倍'）的节点
+          const keywordsToCheckArr = [...KEYWORDS_TO_CHECK];
+          rawObj.proxies = rawObj.proxies.filter(proxy =>
+              !keywordsToCheckArr.some(keyword => proxy.name.includes(keyword))
+          );
+
+          // [步骤 2] 节点清洗：重命名、加图标、文本替换
+          rawObj.proxies = rawObj.proxies.map(proxy => {
+              let newName = proxy.name;
+              newName = newName.replace(removeKeywordsRegex, '');
+              newName = addKeywords(newName, iconsRegex, iconMap);
+              newName = replaceText(newName, REPLACE_MAP);
+
+              proxy.name = newName;
+              return proxy;
+          });
+
+          // [步骤 3] 兜底保障：无论是否有节点，都强制添加一个“无相关节点”,防止因所有节点都被过滤导致 Clash 启动失败
+          rawObj.proxies.push({
+              name: '🈚️ 无相关节点',
+              type: 'ss',
+              server: '0.0.0.0',
+              port: 443,
+              password: 'password',
+              cipher: 'chacha20-ietf-poly1305',
+              udp: true
+          });
+
+          // 过滤排除：定义需要从“常规分组”中剔除的关键词
+          const FILTER_EXCLUDE_KEYWORDS = [
+              /x([2-9]|\d{2,})/i,  // 正则：抓取 x2, x3... x100等
+
+              '剩余', 'ink', '防失联', '节点超时请', '官网', '收藏导航', '套餐到期', '长期有效',
+              '倍率是流量消耗快慢而非速度快慢',
+              '[倍率:2.5]', '[倍率:2]',
+              '🈚️ 无相关节点',
+
+              '专线', '专用', '高级', '直连', '急速', '高速', '高倍率', '游戏', '铂金', '钻石', '企业',
+              'VIP', 'Ultra', 'Game', 'IEPL', 'IPLC', 'AIA', 'GIA', 'CN2', 'CMI', 'CTM', 'CC', 'AC'
+          ];
+
+          // 定义内部使用的节点筛选器
+          // 作用：从给定的代理列表中，剔除匹配 FILTER_EXCLUDE_KEYWORDS 的节点
+          const excludeFilter = (proxies) => proxies
+              .map(proxy => proxy.name)
+              .filter(name => !FILTER_EXCLUDE_KEYWORDS.some(rule => checkMatch(name, rule)));
+
+          // 定义高级筛选器
+          // 优化：合并 filter 逻辑，一次遍历完成包含和排除
+          const furtherFilter = (proxies, includeKeywords = [], excludeKeywords = []) => proxies
+              .filter(name => {
+                  const matchInclude = includeKeywords.length === 0 || includeKeywords.some(rule => checkMatch(name, rule));
+                  const matchExclude = excludeKeywords.length > 0 && excludeKeywords.some(rule => checkMatch(name, rule));
+                  return matchInclude && !matchExclude;
+              });
+
+
+          // ==============================================================================
+          // 4. 节点分组计算
+          // ==============================================================================
+
+          const allProxies = rawObj.proxies.map(proxy => proxy.name); // 获取所有处理后的节点名称
+          const filteredProxies = excludeFilter(rawObj.proxies);         // 获取“干净”的节点（剔除了高倍率、到期等节点）
+
+          // 通用代理组配置（Lazy Load, Interval 等）
+          const commonConfig = {
+              interval: 3600,                                  // 健康检查间隔（秒）
+              tolerance: 50,                                   // 容差值（毫秒）
+              timeout: 1800,                                   // 超时时间
+              url: "http://www.gstatic.com/generate_204",      // 连接测试 URL，非 select 类型分组必要
+              lazy: true,                                      // 启用懒加载，没选中就不需要检测
+              maxFailedTimes: 3,                               // 最大失败次数
+              strategy: "consistent-hashing",                  // 负载均衡策略：将相同的目标地址的请求分配给策略组内的同一个代理节点
+              hidden: false                                    // 是否隐藏
+          };
+
+          /*
+              策略组 type 类型说明
+                  select                  # 手动选点
+                  url-test                # 自动选择延迟最低的节点
+                  fallback                # 节点故障时自动切换下一个
+                  load-balance            # 均衡使用分组内的节点
+          
+              负载均衡 load-balance        策略说明
+                  round-robin             将会把所有的请求分配给策略组内不同的代理节点
+                  consistent-hashing      将相同的 目标地址 的请求分配给策略组内的同一个代理节点
+                  sticky-sessions         将相同的 来源地址 和 目标地址 的请求分配给策略组内的同一个代理节点，缓存 10 分钟过期
+          */
+
+          // ==============================================================================
+          // 5. 代理组 (Proxy Groups) 配置
+          // ==============================================================================
+
+          const FALLBACK_PROXIES = ["🈚️ 无相关节点", "♻️ 负载均衡", "⏱️ 延迟选优", "🚑 故障转移"];
+
+          function buildStrategyGroup(source, include = [], exclude = []) {
+              const nodes = furtherFilter(source, include, exclude);
+              return nodes.length > 0
+                  ? { proxies: nodes }
+                  : { type: "select", proxies: FALLBACK_PROXIES };
+          }
+
+          const proxyGroups = [
+              {
+                  name: "🚀 节点选择",
+                  ...commonConfig,
+                  type: "select",
+                  proxies: (() => {
+                      const nodes = furtherFilter(allProxies, [], []);
+                      const prepend = [
+                          "⏱️ 延迟选优",
+                          "♻️ 负载均衡",
+                          "🚑 故障转移",
+                          "💎 土豪专用"
+                      ];
+                      return [...prepend, ...nodes];
+                  })()
+              },
+              {
+                  name: "📢 公告展示",
+                  ...commonConfig,
+                  type: "select",
+                  ...buildStrategyGroup(allProxies, [], [])
+              },
+              {
+                  name: "🤖 人工智能",
+                  ...commonConfig,
+                  type: "select",
+                  url: "https://chatgpt.com",
+                  proxies: (() => {
+                      const prepend = ["✨ 智能节点"];
+                      const nodes = furtherFilter(filteredProxies, [], ["🇭🇰", "港", "坡", "澳门", "hk", "HK", "hongkong", "hong kong"]);
+                      return [...prepend, ...nodes];
+                  })()
+              },
+              {
+                  name: "✨ 智能节点",
+                  ...commonConfig,
+                  type: "url-test",
+                  url: "https://chatgpt.com",
+                  ...buildStrategyGroup(filteredProxies, [], ["🇭🇰", "港", "坡", "澳门", "hk", "HK", "hongkong", "hong kong"])
+              },
+              {
+                  name: "😻 我要涩涩",
+                  ...commonConfig,
+                  type: "select",
+                  url: "https://javdb.com/",
+                  proxies: (() => {
+                      const prepend = ["🔞 涩涩节点"];
+                      const nodes = furtherFilter(filteredProxies, [], ["日", "东京", "大阪", "埼玉", "九州", "jp", "JP", "japan", "Japan"]);
+                      return [...prepend, ...nodes];
+                  })()
+              },
+              {
+                  name: "🔞 涩涩节点",
+                  ...commonConfig,
+                  type: "load-balance",
+                  url: "https://javdb.com/",
+                  ...buildStrategyGroup(filteredProxies, [], ["日", "东京", "大阪", "埼玉", "九州", "jp", "JP", "japan", "Japan"])
+              },
+              {
+                  name: "💎 土豪专用",
+                  ...commonConfig,
+                  type: "url-test",
+                  ...buildStrategyGroup(
+                      allProxies,
+                      [
+                          /x([2-9]|\d{2,})/i,
+                          "[倍率:1.7]", "[倍率:2]", "[倍率:2.5]",
+                          "专线", "专用", "高级", "直连", "急速", "高速", "高倍率", "游戏", "铂金", "钻石", "企业",
+                          "VIP", "Ultra", "Game", "IEPL", "IPLC", "AIA", "GIA", "CN2", "CMI", "CTM", "CC", "AC"
+                      ]
+                  )
+              },
+              {
+                  name: "🎌 日本节点",
+                  ...commonConfig,
+                  type: "load-balance",
+                  ...buildStrategyGroup(filteredProxies, ["日", "东京", "大阪", "埼玉", "九州", "jp", "JP", "japan", "Japan"], [])
+              },
+              {
+                  name: "♻️ 负载均衡",
+                  ...commonConfig,
+                  type: "load-balance",
+                  ...buildStrategyGroup(filteredProxies, [], [])
+              },
+              {
+                  name: "⏱️ 延迟选优",
+                  ...commonConfig,
+                  type: "url-test",
+                  ...buildStrategyGroup(filteredProxies, [], [])
+              },
+              {
+                  name: "🚑 故障转移",
+                  ...commonConfig,
+                  type: "fallback",
+                  ...buildStrategyGroup(filteredProxies, [], [])
+              }
+          ];
+
+          // 将生成的代理组写入配置对象
+          rawObj['proxy-groups'] = proxyGroups;
+          // 将规则写入配置对象
+          rawObj.rules = rulesConfig;
+
+          // ==============================================================================
+          // 6. 规则集提供者 (Rule Providers) 配置
+          // ==============================================================================
+
+          // 提取通用配置，减少代码冗余
+          const commonRuleProviderConfig = {
+              type: 'http',
+              format: 'mrs',
+              interval: 86400 // 每天更新一次
+          };
+
+          const ruleProvidersConfig = {
+              ads: { ...commonRuleProviderConfig, behavior: 'domain', url: 'https://fastly.jsdelivr.net/gh/DustinWin/ruleset_geodata@refs/heads/mihomo-ruleset/ads.mrs' },
+              'apple-cn': { ...commonRuleProviderConfig, behavior: 'domain', url: 'https://fastly.jsdelivr.net/gh/DustinWin/ruleset_geodata@refs/heads/mihomo-ruleset/apple-cn.mrs' },
+              'google-cn': { ...commonRuleProviderConfig, behavior: 'domain', url: 'https://fastly.jsdelivr.net/gh/DustinWin/ruleset_geodata@refs/heads/mihomo-ruleset/google-cn.mrs' },
+              proxy: { ...commonRuleProviderConfig, behavior: 'domain', url: 'https://fastly.jsdelivr.net/gh/DustinWin/ruleset_geodata@refs/heads/mihomo-ruleset/proxy.mrs' },
+              cn: { ...commonRuleProviderConfig, behavior: 'domain', url: 'https://fastly.jsdelivr.net/gh/DustinWin/ruleset_geodata@refs/heads/mihomo-ruleset/cn.mrs' },
+              cnip: { ...commonRuleProviderConfig, behavior: 'ipcidr', url: 'https://fastly.jsdelivr.net/gh/DustinWin/ruleset_geodata@refs/heads/mihomo-ruleset/cnip.mrs' },
+              media: { ...commonRuleProviderConfig, behavior: 'domain', url: 'https://fastly.jsdelivr.net/gh/DustinWin/ruleset_geodata@refs/heads/mihomo-ruleset/media.mrs' },
+              mediaip: { ...commonRuleProviderConfig, behavior: 'ipcidr', url: 'https://fastly.jsdelivr.net/gh/DustinWin/ruleset_geodata@refs/heads/mihomo-ruleset/mediaip.mrs' },
+              telegramip: { ...commonRuleProviderConfig, behavior: 'ipcidr', url: 'https://fastly.jsdelivr.net/gh/DustinWin/ruleset_geodata@refs/heads/mihomo-ruleset/telegramip.mrs' },
+              privateip: { ...commonRuleProviderConfig, behavior: 'ipcidr', url: 'https://fastly.jsdelivr.net/gh/DustinWin/ruleset_geodata@refs/heads/mihomo-ruleset/privateip.mrs' },
+              private: { ...commonRuleProviderConfig, behavior: 'domain', url: 'https://fastly.jsdelivr.net/gh/DustinWin/ruleset_geodata@refs/heads/mihomo-ruleset/private.mrs' },
+              applications: { ...commonRuleProviderConfig, format: 'text', behavior: 'classical', url: 'https://fastly.jsdelivr.net/gh/DustinWin/ruleset_geodata@refs/heads/mihomo-ruleset/applications.list' },
+              ai: { ...commonRuleProviderConfig, behavior: 'domain', url: 'https://fastly.jsdelivr.net/gh/DustinWin/ruleset_geodata@refs/heads/mihomo-ruleset/ai.mrs' },
+              youtube: { ...commonRuleProviderConfig, behavior: 'domain', url: 'https://fastly.jsdelivr.net/gh/DustinWin/ruleset_geodata@refs/heads/mihomo-ruleset/youtube.mrs' },
+              netflix: { ...commonRuleProviderConfig, behavior: 'domain', url: 'https://fastly.jsdelivr.net/gh/DustinWin/ruleset_geodata@refs/heads/mihomo-ruleset/netflix.mrs' },
+              xbox: { ...commonRuleProviderConfig, behavior: 'domain', url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@refs/heads/meta/geo/geosite/xbox.mrs' },
+              steamcn: { ...commonRuleProviderConfig, behavior: 'domain', url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@refs/heads/meta/geo/geosite/steam%40cn.mrs' },
+              'microsoft-cn': { ...commonRuleProviderConfig, behavior: 'domain', url: 'https://fastly.jsdelivr.net/gh/DustinWin/ruleset_geodata@refs/heads/mihomo-ruleset/microsoft-cn.mrs' },
+              trackerslist: { ...commonRuleProviderConfig, behavior: 'domain', url: 'https://fastly.jsdelivr.net/gh/DustinWin/ruleset_geodata@refs/heads/mihomo-ruleset/trackerslist.mrs' },
+              'games-cn': { ...commonRuleProviderConfig, behavior: 'domain', url: 'https://fastly.jsdelivr.net/gh/DustinWin/ruleset_geodata@refs/heads/mihomo-ruleset/games-cn.mrs' },
+              'games': { ...commonRuleProviderConfig, behavior: 'domain', url: 'https://fastly.jsdelivr.net/gh/DustinWin/ruleset_geodata@refs/heads/mihomo-ruleset/games.mrs' },
+              gamesip: { ...commonRuleProviderConfig, behavior: 'ipcidr', url: 'https://fastly.jsdelivr.net/gh/DustinWin/ruleset_geodata@refs/heads/mihomo-ruleset/gamesip.mrs' },
+              networktest: { ...commonRuleProviderConfig, behavior: 'domain', url: 'https://fastly.jsdelivr.net/gh/DustinWin/ruleset_geodata@refs/heads/mihomo-ruleset/networktest.mrs' },
+              googlefcm: { ...commonRuleProviderConfig, behavior: 'domain', url: 'https://fastly.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@refs/heads/meta/geo/geosite/googlefcm.mrs' }
+          };
+
+          rawObj['proxy-providers'] = {};
+          rawObj['rule-providers'] = ruleProvidersConfig;
+
+          // ==============================================================================
+          // 7. DNS 设置 (保持原始配置)
+          // ==============================================================================
+
+          // 国内DNS服务器列表
+          const DNS_CN = [
+              '223.6.6.6',                                   // 阿里云 DNS
+              '119.29.29.29',                                // DNSPod
+              '114.114.115.115',                             // 114DNS
+              // 'https://doh.pub/dns-query',                // DOH.PUB
+              // 'https://dns.alidns.com/dns-query',         // 阿里云 DNS
+              // 'https://doh.onedns.net/dns-query',         // OneDNS
+              // 'https://doh.360.cn/dns-query',             // 360 DNS
+          ];
+          // 国外DNS服务器列表
+          const DNS_GLOBAL = [
+              '1.1.1.1',                                     // Cloudflare DNS
+              '8.8.8.8',                                     // Google DNS
+              '9.9.9.9',                                     // Quad9 DNS
+              '205.171.3.65',                                // Verisign DNS
+              // 'https://1.1.1.1/dns-query',                // Cloudflare DNS
+              // 'https://dns.google/dns-query',             // Google DNS
+              // 'https://dns.quad9.net/dns-query',          // Quad9 DNS
+              // 'https://dns.yandex.ru/dns-query',          // Yandex DNS
+          ];
+
+          // DNS 核心配置
+          const DNS_CONFIG = {
+              enable: true,                                  // 启用DNS功能
+              'cache-algorithm': 'arc',                      // DNS缓存算法 lru or arc
+              'prefer-h3': true,                             // 优先使用HTTP/3
+              'use-hosts': true,                             // 使用hosts文件
+              'use-system-hosts': true,                      // 使用系统主机文件
+              listen: "0.0.0.0:1053",                        // 监听地址和端口
+              ipv6: true,                                    // 启用IPv6支持
+              'enhanced-mode': 'fake-ip',                    // 增强模式为虚假IP (Clash 核心特性)
+              'fake-ip-range': '198.18.0.1/16',              // 虚假IP范围
+              'fake-ip-filter-mode': 'blacklist',            // 虚假IP过滤模式
+              'fake-ip-filter': [                            // 必须返回真实IP的域名
+                  "+.lan",                                   // 本地主机和设备
+                  "+.local",                                 // 本地主机和设备
+                  "+.msftconnecttest.com",                   // Windows网络检测
+                  "+.msftncsi.com",                          // Windows网络检测
+                  "localhost.ptlogin2.qq.com",               // QQ快速登录检测失败
+                  "localhost.sec.qq.com",                    // QQ快速登录检测失败
+                  "localhost.work.weixin.qq.com"             // 微信快速登录检测失败
+              ],
+              'default-nameserver': [                        // 默认DNS服务器 (用于解析 DoH 域名等)
+                  '223.6.6.6',
+                  '114.114.115.115',
+                  '1.1.1.1',
+                  '8.8.8.8',
+              ],
+              'nameserver-policy': {                         // DNS分流策略
+                  'geosite:private,cn,geolocation-cn': [
+                      ...DNS_CN,                             // 国内域名走国内DNS
+                  ],
+                  'geosite:google,youtube,telegram,gfw,geolocation-!cn': [
+                      ...DNS_GLOBAL,                         // 国外域名走国外DNS
+                  ]
+              },
+              nameserver: [
+                  ...DNS_CN,                                 // 国内 DNS
+                  ...DNS_GLOBAL,                             // 国外 DNS
+              ],
+              'direct-nameserver': [                         // 直连 DNS 服务器
+                  ...DNS_CN,
+              ],
+              fallback: [                                    // 回退 DNS (用于当首选 DNS 解析失败时)
+                  'https://101.101.101.101/dns-query',       // 台湾Quad 101
+                  'https://dns.twnic.tw/dns-query',          // TWNIC DNS
+                  'https://sky.rethinkdns.com/dns-query',    // RethinkDNS
+              ],
+              'fallback-filter': {                           // 回退过滤 (防止 DNS 污染)
+                  geoip: true,
+                  'geoip-code': 'CN',
+                  geosite: ['gfw'],
+                  ipcidr: ['240.0.0.0/4', '0.0.0.0/32'],
+                  domain: [
+                      '+.google.com',
+                      '+.facebook.com',
+                      '+.youtube.com'
+                  ]
+              }
+          };
+
+          // 合并原有 DNS 配置和新的 DNS 配置
+          rawObj.dns = { ...rawObj.dns, ...DNS_CONFIG };
+
+          // ==============================================================================
+          // 8. 嗅探器 (Sniffer) 配置
+          // ==============================================================================
+
+          const snifferConfig = {
+              enable: true,
+              'force-dns-mapping': true,
+              'parse-pure-ip': true,
+              'override-destination': true,
+              sniff: {
+                  HTTP: {
+                      ports: [80, '8080-8880'],
+                      'override-destination': true
+                  },
+                  TLS: {
+                      ports: [443, 8443]
+                  },
+                  QUIC: {
+                      ports: [443, 8443]
+                  }
+              },
+              'force-domain': [
+                  '+.v2ex.com'
+              ],
+              'skip-domain': [
+                  'Mijia Cloud'
+              ],
+              'skip-src-address': [
+                  '192.168.0.3/32'
+              ],
+              'skip-dst-address': [
+                  '192.168.0.3/32'
+              ]
+          };
+
+          // 应用嗅探配置
+          rawObj.sniffer = snifferConfig;
+
+          // 返回处理后的 YAML 数据
+          return yaml.stringify(rawObj);
+      };
