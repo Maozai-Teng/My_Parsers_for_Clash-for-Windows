@@ -54,15 +54,10 @@ jobs:
             -o "${{ steps.get_parser.outputs.asset_name }}" \
             "${{ steps.get_parser.outputs.asset_url }}"
 
-      # 4️⃣ 删除旧版本文件，只保留最新下载的
-      - name: Delete old parser files
+      # 4️⃣ 删除旧版本文件（只保留最新下载的文件）
+      - name: Delete old parser files in git
         run: |
-          for f in clash-parsers-*.yaml; do
-            if [ "$f" != "${{ steps.get_parser.outputs.asset_name }}" ]; then
-              rm -f "$f"
-              echo "Deleted old parser file: $f"
-            fi
-          done
+          git ls-files "clash-parsers-*.yaml" | grep -v "${{ steps.get_parser.outputs.asset_name }}" | xargs -r git rm
 
       # 5️⃣ 设置 git identity
       - name: Set git identity
