@@ -13,11 +13,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout 当前分支
+      # 1️⃣ Checkout 当前分支（解决 detached HEAD 问题）
       - name: Checkout current branch
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.ref_name }}
 
       - name: Show branch info
         run: |
@@ -54,7 +55,7 @@ jobs:
             -o "${{ steps.get_parser.outputs.asset_name }}" \
             "${{ steps.get_parser.outputs.asset_url }}"
 
-      # 4️⃣ 删除旧版本文件（只保留最新下载的文件）
+      # 4️⃣ 删除旧版本文件（保留最新下载的文件）
       - name: Delete old parser files in git
         run: |
           git ls-files "clash-parsers-*.yaml" | grep -v "${{ steps.get_parser.outputs.asset_name }}" | xargs -r git rm
