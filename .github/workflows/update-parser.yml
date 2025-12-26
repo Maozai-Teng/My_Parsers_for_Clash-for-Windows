@@ -1,82 +1,90 @@
-name: Update Latest Parser File
+name: Auto Update Parser (Universal)
 
 on:
+  # 1. 发布 Release 时触发
   release:
     types: [published]
+  # 2. 手动按按钮时触发
   workflow_dispatch:
 
+# 必须赋予写权限，否则无法推送代码
 permissions:
   contents: write
 
 jobs:
-  update-file:
+  universal-update:
     runs-on: ubuntu-latest
     steps:
-      - name: Determine Target Branch
+      # 【第一步：智能识别目标分支】
+      # 无论是发布 Release 还是按按钮，都算出我们到底该操作哪个分支
+      - name: 🧠 Determine Target Branch
         id: branch
         run: |
           if [ "${{ github.event_name }}" == "release" ]; then
-            # Release 触发时，获取该 Release 指向的目标分支
-            echo "TARGET_BRANCH=${{ github.event.release.target_commitish }}" >> $GITHUB_OUTPUT
-            echo "Using release target branch: ${{ github.event.release.target_commitish }}"
+            # 如果是发版，目标就是 Release 指定的分支（Target: main/beta...）
+            TARGET="${{ github.event.release.target_commitish }}"
+            echo "Trigger: Release created."
           else
-            # 手动触发时，获取当前所在的分支
-            echo "TARGET_BRANCH=${{ github.ref_name }}" >> $GITHUB_OUTPUT
-            echo "Using current manual branch: ${{ github.ref_name }}"
+            # 如果是按按钮，目标就是当前你选中的分支
+            TARGET="${{ github.ref_name }}"
+            echo "Trigger: Manual button."
           fi
+          
+          echo "TARGET_BRANCH=$TARGET" >> $GITHUB_OUTPUT
+          echo "✅ Targeted Branch: $TARGET"
 
-      - name: Checkout target branch code
+      # 【第二步：精准检出分支】
+      # 关键点：使用 ref 参数强制检出分支名，彻底避开 Detached HEAD 问题
+      - name: 📥 Checkout Branch Code
         uses: actions/checkout@v4
         with:
-          # 直接检出目标分支，而不是 release 的 tag
           ref: ${{ steps.branch.outputs.TARGET_BRANCH }}
+          fetch-depth: 0
 
-      - name: Delete Old Files
+      # 【第三步：清理旧文件】
+      - name: 🗑️ Remove Old Parsers
         run: |
-          echo "Looking for old parser files to delete..."
+          echo "Cleaning up old files..."
+          # 删掉所有 clash-parsers- 开头的 yaml 文件，只保留 Action 刚要下载的那个
           find . -maxdepth 1 -type f -name "clash-parsers-*.yaml" -print -delete
-          echo "Old files deleted."
 
-      - name: Download New File from Release
+      # 【第四步：下载最新文件】
+      - name: ⬇️ Download New Asset
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          echo "Downloading the latest asset..."
-          # 定义文件名匹配模式
           PATTERN="clash-parsers-*.yaml"
           
           if [ "${{ github.event_name }}" == "release" ]; then
-            # 如果是发布触发，下载刚刚发布的那个 Release 中的文件
+            # 情况 A: Release 触发，下载【本次】发布的那个版本
             TAG="${{ github.event.release.tag_name }}"
-            echo "Triggered by Release. Downloading asset from tag: $TAG"
+            echo "Downloading assets from Release Tag: $TAG"
             gh release download "$TAG" --pattern "$PATTERN" --clobber
           else
-            # 如果是手动触发，下载最新的那个 Release 中的文件
-            echo "Triggered Manually. Downloading asset from the Latest Release"
+            # 情况 B: 手动触发，下载【最新】的一个 Release
+            echo "Downloading assets from Latest Release"
             gh release download --pattern "$PATTERN" --clobber
           fi
           
-          # 检查文件是否下载成功
-          if ! ls clash-parsers-*.yaml 1> /dev/null 2>&1; then
-            echo "::error::Failed to download the parser file!"
-            exit 1
-          fi
-          echo "File downloaded successfully."
           ls -lh clash-parsers-*.yaml
 
-      - name: Commit and Push Changes
+      # 【第五步：提交并推送】
+      # 因为第二步已经切到了分支，这里直接 push 即可，适配所有分支
+      - name: 🚀 Commit and Push
         run: |
+          # 配置 Git 身份
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
           git add .
           
-          # 检查是否有文件变动
+          # 检查是否有变动
           if git diff --staged --quiet; then
-            echo "No changes detected. The file is already up-to-date."
+            echo "⚠️ No changes detected. Warehouse is already up to date."
           else
-            git commit -m "Auto-update: Replace parser with latest release"
-            # 直接推送到我们检出的目标分支
+            git commit -m "Auto-update: Sync parser file with release"
+            
+            # 直接 push，Git 会自动推送到我们在第二步 checkout 的那个分支
             git push
-            echo "Successfully committed and pushed changes to branch ${{ steps.branch.outputs.TARGET_BRANCH }}"
+            echo "🎉 Successfully pushed to ${{ steps.branch.outputs.TARGET_BRANCH }}"
           fi
