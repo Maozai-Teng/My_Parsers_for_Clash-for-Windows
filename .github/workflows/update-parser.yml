@@ -1,74 +1,81 @@
-name: Update Clash Parser from Release
+name: Update Latest Parser File
 
 on:
+  # 当发布新 Release 时触发
   release:
     types: [published]
+  # 允许手动按按钮触发
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: write  # 需要写权限来删除旧文件和上传新文件
 
 jobs:
-  update-parser:
+  update-file:
     runs-on: ubuntu-latest
-
     steps:
-      # 1️⃣ Checkout 当前分支（解决 detached HEAD 问题）
-      - name: Checkout current branch
+      - name: Determine Target Branch
+        id: branch
+        run: |
+          # 确定要操作的分支
+          if [ "${{ github.event_name }}" == "release" ]; then
+            echo "TARGET_BRANCH=${{ github.event.release.target_commitish }}" >> $GITHUB_OUTPUT
+            echo "Using release target branch: ${{ github.event.release.target_commitish }}"
+          else
+            echo "TARGET_BRANCH=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+            echo "Using current manual branch: ${{ github.ref_name }}"
+          fi
+
+      - name: Checkout Code
         uses: actions/checkout@v4
         with:
+          ref: ${{ steps.branch.outputs.TARGET_BRANCH }}
           fetch-depth: 0
-          ref: ${{ github.ref_name }}
 
-      - name: Show branch info
+      - name: Delete Old Files
         run: |
-          echo "Branch name: ${{ github.ref_name }}"
+          echo "Looking for old files to delete..."
+          # 删除当前目录下所有匹配 clash-parsers-*.yaml 的文件
+          # maxdepth 1 保证只删根目录，不误删子文件夹里的
+          find . -maxdepth 1 -type f -name "clash-parsers-*.yaml" -print -delete
+          echo "Old files deleted (if any)."
 
-      # 2️⃣ 获取最新 Release 的 clash-parsers-*.yaml
-      - name: Get latest parser from Release
-        id: get_parser
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-
-            // 获取最新 Release
-            const release = await github.rest.repos.getLatestRelease({ owner, repo });
-
-            // 找到 clash-parsers-*.yaml
-            const asset = release.data.assets.find(a => /^clash-parsers-.*\.yaml$/i.test(a.name));
-
-            if (!asset) {
-              core.setFailed("❌ 没找到 clash-parsers-*.yaml 文件");
-              return;
-            }
-
-            core.setOutput("asset_url", asset.browser_download_url);
-            core.setOutput("asset_name", asset.name);
-            console.log(`Found asset: ${asset.name}`);
-
-      # 3️⃣ 下载最新文件
-      - name: Download latest parser file
+      - name: Download New File from Release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          curl -L -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -o "${{ steps.get_parser.outputs.asset_name }}" \
-            "${{ steps.get_parser.outputs.asset_url }}"
+          echo "Downloading latest asset..."
+          
+          # 定义文件名匹配模式
+          PATTERN="clash-parsers-*.yaml"
+          
+          if [ "${{ github.event_name }}" == "release" ]; then
+            # 如果是发布触发，下载刚刚发布的那个 Release 中的文件
+            TAG="${{ github.event.release.tag_name }}"
+            echo "Triggered by Release. Downloading assets from tag: $TAG"
+            gh release download "$TAG" --pattern "$PATTERN" --clobber
+          else
+            # 如果是手动触发，下载所有 Release 中最新的那个（Latest）
+            echo "Triggered Manually. Downloading assets from the Latest Release"
+            gh release download --pattern "$PATTERN" --clobber
+          fi
+          
+          ls -lh clash-parsers-*.yaml
 
-      # 4️⃣ 删除旧版本文件（保留最新下载的文件）
-      - name: Delete old parser files in git
+      - name: Commit and Push Changes
         run: |
-          git ls-files "clash-parsers-*.yaml" | grep -v "${{ steps.get_parser.outputs.asset_name }}" | xargs -r git rm
-
-      # 5️⃣ 设置 git identity
-      - name: Set git identity
-        run: |
-          git config --global user.name "github-actions"
-          git config --global user.email "github-actions@github.com"
-
-      # 6️⃣ Commit & Push
-      - name: Commit and push
-        run: |
-          git add clash-parsers-*.yaml
-          git commit -m "Update parser to ${{ steps.get_parser.outputs.asset_name }}" || echo "Nothing to commit"
-          git push origin HEAD:${{ github.ref_name }}
+          # 配置 Git 用户信息（使用 GitHub Actions bot）
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # 添加所有变动（包含删除的和新增的）
+          git add .
+          
+          # 检查是否有变动，如果有则提交
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Auto-update: Replace parser file with latest release version"
+            git push origin ${{ steps.branch.outputs.TARGET_BRANCH }}
+            echo "Successfully updated the file in branch ${{ steps.branch.outputs.TARGET_BRANCH }}"
+          fi
