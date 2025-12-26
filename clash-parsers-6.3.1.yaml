@@ -41,15 +41,6 @@ parsers: # array
           "傻逼": "SB"
       };
 
-      // 过滤排除：定义需要从“常规分组”中剔除带关键词的节点
-      const FILTER_EXCLUDE_KEYWORDS = [
-          /x([2-9]|\d{2,})/i,  // 正则：抓取 x2, x3... x100等
-          "剩余", "ink", "防失联", "节点超时请", "官网", "收藏导航", "套餐到期", "长期有效", "倍率是流量",
-          "[倍率:1.7]", "[倍率:2]", "[倍率:2.5]", "🈚️ 无相关节点",
-          "专线", "专用", "高级", "直连", "急速", "高速", "高倍率", "游戏", "铂金", "钻石", "企业",
-          "VIP", "Ultra", "Game", "IEPL", "IPLC", "AIA", "GIA", "CN2", "CMI", "CTM", "CC", "AC"
-      ];
-
       // 规则定义：规则列表,包含自定义规则和引用的规则集 (RULE-SET)
       const rulesConfig = [
           // 自定义程序规则
@@ -163,9 +154,7 @@ parsers: # array
       // 3. 逻辑处理函数 (Logic Handlers)
       // ==============================================================================
 
-      /**
-      * 代理处理主逻辑：过滤、重命名、加图标、去重
-      */
+      // 代理处理主逻辑：过滤、重命名、加图标、去重
       function processProxies(rawProxies) {
           let proxies = [...rawProxies];
 
@@ -223,11 +212,15 @@ parsers: # array
           return proxies;
       }
 
-      /**
-      * 生成代理组 (Proxy Groups) 配置
-      * @param {Array} allProxies 所有处理后的节点名称
-      * @param {Array} filteredProxies 剔除了高倍率、到期等节点的“干净”节点名称
-      */
+      // 过滤排除：定义需要从“常规分组”中剔除带关键词的节点
+      const FILTER_EXCLUDE_KEYWORDS = [
+          /x([2-9]|\d{2,})/i,  // 正则：抓取 x2, x3... x100等
+          "剩余", "ink", "防失联", "节点超时请", "官网", "收藏导航", "套餐到期", "长期有效", "倍率是流量",
+          "[倍率:1.7]", "[倍率:2]", "[倍率:2.5]", "🈚️ 无相关节点",
+          "专线", "专用", "高级", "直连", "急速", "高速", "高倍率", "游戏", "铂金", "钻石", "企业",
+          "VIP", "Ultra", "Game", "IEPL", "IPLC", "AIA", "GIA", "CN2", "CMI", "CTM", "CC", "AC"
+      ];
+
       function generateProxyGroups(allProxies, filteredProxies) {
           // 通用代理组配置（Lazy Load, Interval 等）
           const commonConfig = {
@@ -297,6 +290,7 @@ parsers: # array
                   name: "✨ 智能节点",
                   type: "url-test",
                   url: "https://chatgpt.com",
+                  hidden: true,
                   ...buildStrategyGroup(filteredProxies, [], ["🇭🇰", "港", "坡", "澳门", "hk", "HK", "hongkong", "hong kong"])
               },
               {
@@ -315,6 +309,7 @@ parsers: # array
                   name: "🔞 涩涩节点",
                   type: "load-balance",
                   url: "https://javdb.com/",
+                  hidden: true,
                   ...buildStrategyGroup(filteredProxies, [], ["日", "东京", "大阪", "埼玉", "九州", "jp", "JP", "japan", "Japan"])
               },
               {
@@ -341,6 +336,7 @@ parsers: # array
                   ...commonConfig,
                   name: "♻️ 负载均衡",
                   type: "load-balance",
+                  hidden: true,
                   ...buildStrategyGroup(filteredProxies, [], [])
               },
               {
@@ -353,6 +349,7 @@ parsers: # array
                   ...commonConfig,
                   name: "🚑 故障转移",
                   type: "fallback",
+                  hidden: true,
                   ...buildStrategyGroup(filteredProxies, [], [])
               }
           ];
@@ -360,15 +357,13 @@ parsers: # array
           return proxyGroups;
       }
 
-      /**
-      * 生成规则集提供者 (Rule Providers) 配置
-      */
+      // 生成规则集提供者 (Rule Providers) 配置
       function generateRuleProviders() {
           // 提取通用配置，减少代码冗余
           const ruleProviderCommon = {
-              type: "http",
-              format: "mrs",
-              interval: 86400 // 每天更新一次
+              type: "http",          // 请求类型为HTTP
+              format: "mrs",         // 文件格式为YAML
+              interval: 86400        // 更新间隔为86400秒（24小时）
           };
 
           return {
@@ -399,89 +394,70 @@ parsers: # array
           };
       }
 
-      /**
-      * 生成 DNS 设置
-      */
+      // 生成 DNS 设置
       function generateDnsConfig(originalDns) {
-          // 国内DNS服务器列表
+          // 国内 DNS 服务器列表
           const DNS_CN = [
-              "223.6.6.6",                                   // 阿里云 DNS
-              "119.29.29.29",                                // DNSPod
-              "114.114.115.115",                             // 114DNS
-              // "https://doh.pub/dns-query",                // DOH.PUB
-              // "https://dns.alidns.com/dns-query",         // 阿里云 DNS
-              // "https://doh.onedns.net/dns-query",         // OneDNS
-              // "https://doh.360.cn/dns-query",             // 360 DNS
+              "223.6.6.6",                                                // 阿里云 DNS
+              "119.29.29.29",                                             // DNSPod
+              "114.114.115.115",                                          // 114DNS
+              // "https://doh.pub/dns-query",                             // DOH.PUB
+              // "https://dns.alidns.com/dns-query",                      // 阿里云 DNS
+              // "https://doh.onedns.net/dns-query",                      // OneDNS
+              // "https://doh.360.cn/dns-query",                          // 360 DNS
           ];
-          // 国外DNS服务器列表
+
+          // 国外 DNS 服务器列表
           const DNS_GLOBAL = [
-              "1.1.1.1",                                     // Cloudflare DNS
-              "8.8.8.8",                                     // Google DNS
-              "9.9.9.9",                                     // Quad9 DNS
-              "205.171.3.65",                                // Verisign DNS
-              // "https://1.1.1.1/dns-query",                // Cloudflare DNS
-              // "https://dns.google/dns-query",             // Google DNS
-              // "https://dns.quad9.net/dns-query",          // Quad9 DNS
-              // "https://dns.yandex.ru/dns-query",          // Yandex DNS
+              "1.1.1.1",                                                  // Cloudflare DNS
+              "8.8.8.8",                                                  // Google DNS
+              "9.9.9.9",                                                  // Quad9 DNS
+              "205.171.3.65",                                             // Verisign DNS
+              // "https://1.1.1.1/dns-query",                             // Cloudflare DNS
+              // "https://dns.google/dns-query",                          // Google DNS
+              // "https://dns.quad9.net/dns-query",                       // Quad9 DNS
+              // "https://dns.yandex.ru/dns-query",                       // Yandex DNS
           ];
 
           // DNS 核心配置
           const DNS_CONFIG = {
-              enable: true,                                  // 启用DNS功能
-              "cache-algorithm": "arc",                      // DNS缓存算法 lru or arc
-              "prefer-h3": true,                             // 优先使用HTTP/3
-              "use-hosts": true,                             // 使用hosts文件
-              "use-system-hosts": true,                      // 使用系统主机文件
-              listen: "0.0.0.0:1053",                        // 监听地址和端口
-              ipv6: true,                                    // 启用IPv6支持
-              "enhanced-mode": "fake-ip",                    // 增强模式为虚假IP (Clash 核心特性)
-              "fake-ip-range": "198.18.0.1/16",              // 虚假IP范围
-              "fake-ip-filter-mode": "blacklist",            // 虚假IP过滤模式
-              "fake-ip-filter": [                            // 必须返回真实IP的域名
-                  "+.lan",                                   // 本地主机和设备
-                  "+.local",                                 // 本地主机和设备
-                  "+.msftconnecttest.com",                   // Windows网络检测
-                  "+.msftncsi.com",                          // Windows网络检测
-                  "localhost.ptlogin2.qq.com",               // QQ快速登录检测失败
-                  "localhost.sec.qq.com",                    // QQ快速登录检测失败
-                  "localhost.work.weixin.qq.com"             // 微信快速登录检测失败
-              ],
-              "default-nameserver": [                        // 默认DNS服务器 (用于解析 DoH 域名等)
-                  "223.6.6.6",
-                  "114.114.115.115",
-                  "1.1.1.1",
-                  "8.8.8.8",
-              ],
-              "nameserver-policy": {                         // DNS分流策略
-                  "geosite:private,cn,geolocation-cn": [
-                      ...DNS_CN,                             // 国内域名走国内DNS
-                  ],
-                  "geosite:google,youtube,telegram,gfw,geolocation-!cn": [
-                      ...DNS_GLOBAL,                         // 国外域名走国外DNS
-                  ]
+              enable: true,                                               // 启用 DNS 功能
+              "cache-algorithm": "arc",                                   // DNS 缓存算法 lru or arc
+              "prefer-h3": true,                                          // 优先使用 HTTP/3
+              "use-hosts": true,                                          // 使用 hosts 文件
+              "use-system-hosts": true,                                   // 使用系统主机文件
+              listen: "0.0.0.0:1053",                                     // 监听地址和端口
+              ipv6: true,                                                 // 启用 IPv6 支持
+              "enhanced-mode": "fake-ip",                                 // 增强模式为虚假 IP
+              "fake-ip-range": "198.18.0.1/16",                           // 虚假 IP 范围
+              "fake-ip-filter-mode": "blacklist",                         // 虚假 IP 过滤模式
+              "fake-ip-filter": [                                         // 必须返回真实 IP 的域名
+                  "+.lan",                                                // 本地主机和设备
+                  "+.local",                                              // 本地主机和设备
+                  "+.msftconnecttest.com",                                // Windows 网络检测
+                  "+.msftncsi.com",                                       // Windows 网络检测
+                  "localhost.ptlogin2.qq.com",                            // QQ 快速登录检测失败
+                  "localhost.sec.qq.com",                                 // QQ 快速登录检测失败
+                  "localhost.work.weixin.qq.com"                          // 微信 快速登录检测失败
+              ],                                                          // 默认 DNS 服务器
+              "default-nameserver": ["223.6.6.6", "114.114.115.115", "1.1.1.1", "8.8.8.8"],
+              "nameserver-policy": {                                      // DNS 分流策略
+                  "geosite:private,cn,geolocation-cn": [...DNS_CN],
+                  "geosite:google,youtube,telegram,gfw,geolocation-!cn": [...DNS_GLOBAL]
               },
-              nameserver: [
-                  ...DNS_CN,                                 // 国内 DNS
-                  ...DNS_GLOBAL,                             // 国外 DNS
+              nameserver: [...DNS_CN, ...DNS_GLOBAL],
+              "direct-nameserver": [...DNS_CN],                           // 直连 DNS 服务器
+              fallback: [                                                 // 回退 DNS (用于当首选 DNS 解析失败时)
+                  "https://101.101.101.101/dns-query",                    // 台湾 Quad 101
+                  "https://dns.twnic.tw/dns-query",                       // TWNIC DNS
+                  "https://sky.rethinkdns.com/dns-query",                 // RethinkDNS
               ],
-              "direct-nameserver": [                         // 直连 DNS 服务器
-                  ...DNS_CN,
-              ],
-              fallback: [                                    // 回退 DNS (用于当首选 DNS 解析失败时)
-                  "https://101.101.101.101/dns-query",       // 台湾Quad 101
-                  "https://dns.twnic.tw/dns-query",          // TWNIC DNS
-                  "https://sky.rethinkdns.com/dns-query",    // RethinkDNS
-              ],
-              "fallback-filter": {                           // 回退过滤 (防止 DNS 污染)
+              "fallback-filter": {                                        // 回退过滤 (防止 DNS 污染)
                   geoip: true,
                   "geoip-code": "CN",
                   geosite: ["gfw"],
                   ipcidr: ["240.0.0.0/4", "0.0.0.0/32"],
-                  domain: [
-                      "+.google.com",
-                      "+.facebook.com",
-                      "+.youtube.com"
-                  ]
+                  domain: ["+.google.com", "+.facebook.com", "+.youtube.com"]
               }
           };
 
@@ -489,9 +465,7 @@ parsers: # array
           return { ...originalDns, ...DNS_CONFIG };
       }
 
-      /**
-      * 生成嗅探器 (Sniffer) 配置
-      */
+      // 生成嗅探器 (Sniffer) 配置
       function generateSnifferConfig() {
           return {
               enable: true,
@@ -499,29 +473,14 @@ parsers: # array
               "parse-pure-ip": true,
               "override-destination": true,
               sniff: {
-                  HTTP: {
-                      ports: [80, "8080-8880"],
-                      "override-destination": true
-                  },
-                  TLS: {
-                      ports: [443, 8443]
-                  },
-                  QUIC: {
-                      ports: [443, 8443]
-                  }
+                  HTTP: { ports: [80, "8080-8880"], "override-destination": true },
+                  TLS: { ports: [443, 8443] },
+                  QUIC: { ports: [443, 8443] }
               },
-              "force-domain": [
-                  "+.v2ex.com"
-              ],
-              "skip-domain": [
-                  "Mijia Cloud"
-              ],
-              "skip-src-address": [
-                  "192.168.0.3/32"
-              ],
-              "skip-dst-address": [
-                  "192.168.0.3/32"
-              ]
+              "force-domain": ["+.v2ex.com"],
+              "skip-domain": ["Mijia Cloud"],
+              "skip-src-address": ["192.168.0.3/32"],
+              "skip-dst-address": ["192.168.0.3/32"]
           };
       }
 
