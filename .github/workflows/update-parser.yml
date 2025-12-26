@@ -1,56 +1,60 @@
-name: Update Clash Parser From Latest Release
+name: Update Clash Parser from Release
 
 on:
   release:
-    types: [published]     # 只在发布新 Release 时执行
-  workflow_dispatch:        # 可手动触发
-
-permissions:
-  contents: write
+    types: [published]
 
 jobs:
   update-parser:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repo
+      - name: Checkout current branch
         uses: actions/checkout@v4
-
-      - name: Get Latest Release Asset
-        id: get_asset
-        uses: actions/github-script@v7
         with:
-          script: |
-            const { owner, repo } = context.repo;
-            const latest = await github.rest.repos.getLatestRelease({ owner, repo });
+          fetch-depth: 0
 
-            const asset = latest.data.assets.find(a =>
-              a.name.startsWith("clash-parsers") && a.name.endsWith(".yaml")
-            );
-
-            if (!asset) {
-              core.setFailed("❌ 没找到 clash-parsers-*.yaml 文件");
-              return;
-            }
-
-            core.setOutput("asset_url", asset.browser_download_url);
-            core.setOutput("asset_name", asset.name);
-          result-encoding: string
-
-      - name: Download Latest Parser File
+      - name: Show branch info
         run: |
-          echo "下载: ${{ steps.get_asset.outputs.asset_name }}"
-          curl -L -o "${{ steps.get_asset.outputs.asset_name }}" "${{ steps.get_asset.outputs.asset_url }}"
+          echo "Event ref: ${{ github.ref }}"
+          echo "Branch name: ${{ github.ref_name }}"
 
-      - name: Remove Old Parser Files
+      - name: Delete old parser files
         run: |
-          find . -maxdepth 1 -name "clash-parsers-*.yaml" ! -name "${{ steps.get_asset.outputs.asset_name }}" -delete
+          rm -f clash-parsers-*.yaml || true
 
-      - name: Commit & Push
+      - name: Download latest release parser file
+        run: |
+          ASSETS_JSON='${{ toJson(github.event.release.assets) }}'
+          echo "$ASSETS_JSON" | jq .
+
+          DOWNLOAD_URL=$(echo "$ASSETS_JSON" | jq -r '.[] | select(.name | test("^clash-parsers-.*\\.yaml$")) | .browser_download_url')
+
+          if [ -z "$DOWNLOAD_URL" ] || [ "$DOWNLOAD_URL" == "null" ]; then
+            echo "❌ 没有找到 clash-parsers-*.yaml 资源"
+            exit 1
+          fi
+
+          echo "Found asset url: $DOWNLOAD_URL"
+
+          curl -L \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -o clash-parser.yaml \
+            "$DOWNLOAD_URL"
+
+      - name: Rename downloaded file to keep original name
+        run: |
+          REAL_NAME=$(echo '${{ toJson(github.event.release.assets) }}' | jq -r '.[] | select(.name | test("^clash-parsers-.*\\.yaml$")) | .name')
+          mv clash-parser.yaml "$REAL_NAME"
+          echo "Saved as: $REAL_NAME"
+
+      - name: Set git identity
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
 
+      - name: Commit and Push
+        run: |
           git add clash-parsers-*.yaml
-          git commit -m "Update parser to ${{ steps.get_asset.outputs.asset_name }}" || echo "Nothing to commit"
-          git push
+          git commit -m "Update parser from latest release" || echo "Nothing to commit"
+          git push origin HEAD:${{ github.ref_name }}
