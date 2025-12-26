@@ -1,0 +1,94 @@
+name: Deploy New Parser (Clean)
+
+on:
+  # 1. 允许发布 Release 时自动触发
+  release:
+    types: [published]
+  # 2. 允许你手动按按钮触发（最推荐先用这个测）
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  deploy-job:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 打印一下当前触发的原因，方便你看日志
+      - name: 🔍 Debug Trigger Info
+        run: |
+          echo "Triggered by: ${{ github.event_name }}"
+          echo "Ref: ${{ github.ref }}"
+
+      # 2. 识别目标分支
+      - name: 🎯 Determine Target Branch
+        id: branch
+        run: |
+          if [ "${{ github.event_name }}" == "release" ]; then
+            # 如果是 Release，目标就是发版时选的分支 (Target)
+            TARGET="${{ github.event.release.target_commitish }}"
+          else
+            # 如果是手动触发，目标就是当前分支
+            TARGET="${{ github.ref_name }}"
+          fi
+          echo "TARGET=$TARGET" >> $GITHUB_OUTPUT
+          echo "Target Branch: $TARGET"
+
+      # 3. 拉取代码 (完整历史)
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 4. 【核心】强制切换到目标分支 (彻底解决 detached HEAD 报错)
+      - name: 🔧 Force Switch to Branch
+        run: |
+          TARGET="${{ steps.branch.outputs.TARGET }}"
+          echo "Force switching git to branch: $TARGET"
+          # 强制把当前环境重置为远程分支的状态
+          git checkout -B $TARGET origin/$TARGET
+          echo "Now on branch: $(git branch --show-current)"
+
+      # 5. 【动作】删掉旧的，下载新的
+      - name: 🔄 Replace Files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "--- Deleting old yaml files ---"
+          # 只要是这个名字开头的 yaml，全部删掉
+          find . -maxdepth 1 -type f -name "clash-parsers-*.yaml" -delete
+          
+          echo "--- Downloading new asset ---"
+          PATTERN="clash-parsers-*.yaml"
+          
+          if [ "${{ github.event_name }}" == "release" ]; then
+            # Release 触发：下载本次发布的那个文件
+            TAG="${{ github.event.release.tag_name }}"
+            gh release download "$TAG" --pattern "$PATTERN" --clobber
+          else
+            # 手动触发：下载最新的 Release 文件
+            gh release download --pattern "$PATTERN" --clobber
+          fi
+          
+          # 打印出来看看现在剩下啥
+          ls -lh clash-parsers-*.yaml
+
+      # 6. 提交并推送
+      - name: 🚀 Commit and Push
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git add .
+          
+          # 强制提交逻辑：只要 git 认为有差异（改名了、改内容了），就提交
+          if git diff --staged --quiet; then
+            echo "✅ 文件名和内容完全一致，无需更新。"
+          else
+            echo "🔥 检测到变化，正在更新..."
+            git commit -m "Auto-update: Replace parser file via Action"
+            
+            # 直接 push，因为第4步已经切回了分支，所以这里不会报错
+            git push origin ${{ steps.branch.outputs.TARGET }}
+            echo "🎉 推送成功！"
+          fi
