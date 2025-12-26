@@ -1,4 +1,4 @@
-name: Debug and Force Update
+name: Update Parser (Force Replace)
 
 on:
   release:
@@ -9,98 +9,70 @@ permissions:
   contents: write
 
 jobs:
-  debug-fix-job:
+  force-update:
     runs-on: ubuntu-latest
     steps:
-      # 【步骤 1】识别目标分支，并打印调试信息
-      - name: 🔍 1. Identify Branch & Debug Info
-        id: info
+      # 1. 算出目标分支 (Target)
+      - name: 🔍 Determine Target Branch
+        id: branch
         run: |
-          echo "========== [DEBUG START] =========="
-          echo "Event Name: ${{ github.event_name }}"
-          
-          # 判断目标分支
           if [ "${{ github.event_name }}" == "release" ]; then
-            TARGET="${{ github.event.release.target_commitish }}"
-            echo "Trigger: Release"
-            echo "Release Target (Commitish): $TARGET"
+            echo "TARGET=${{ github.event.release.target_commitish }}" >> $GITHUB_OUTPUT
           else
-            TARGET="${{ github.ref_name }}"
-            echo "Trigger: Manual"
-            echo "Current Ref: $TARGET"
+            echo "TARGET=${{ github.ref_name }}" >> $GITHUB_OUTPUT
           fi
-          
-          echo "TARGET_BRANCH=$TARGET" >> $GITHUB_OUTPUT
-          echo "Desired Target Branch: $TARGET"
-          echo "========== [DEBUG END] =========="
 
-      # 【步骤 2】拉取代码（fetch-depth: 0 保证拉取完整历史，否则无法切换分支）
-      - name: 📥 2. Checkout Code
+      # 2. 检出代码
+      - name: 📥 Checkout Code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # 【步骤 3】🚨 核心修复：强制 Git 切换到分支 🚨
-      # 不管 checkout 处于什么状态，这里手动强制重置到目标分支
-      - name: 🔧 3. Force Switch to Branch
+      # 3. 【关键】强制切换到正确的分支 (解决报错 128)
+      - name: 🔧 Fix Detached HEAD
         run: |
-          TARGET="${{ steps.info.outputs.TARGET_BRANCH }}"
-          
-          echo "--- Git Status Before Fix (Likely Detached) ---"
-          git status
-          
-          echo ">>> FORCING GIT TO SWITCH TO BRANCH: $TARGET <<<"
-          # 强制创建(如果不存在)并重置本地分支到远程分支的状态
-          # 这行命令是解决问题的关键，它会把 'HEAD' 强行绑回分支上
-          git checkout -B "$TARGET" "origin/$TARGET"
-          
-          echo "--- Git Status After Fix (Should be on branch) ---"
-          git status
-          
-          # 双重检查：如果还不是分支，直接报错停止，方便排查
-          if [ "$(git symbolic-ref -q HEAD)" != "refs/heads/$TARGET" ]; then
-            echo "❌ ERROR: Failed to switch to branch $TARGET. Still detached!"
-            exit 1
-          else
-            echo "✅ SUCCESS: Confirmed we are strictly on branch '$TARGET'"
-          fi
+          TARGET="${{ steps.branch.outputs.TARGET }}"
+          # 强制把当前环境按在分支上
+          git checkout -B $TARGET origin/$TARGET
 
-      # 【步骤 4】文件处理（删旧、下新）
-      - name: 📂 4. Replace Files
+      # 4. 【动作】删旧 + 下新
+      - name: 🔄 Replace File
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          echo "Deleting old parser files..."
-          find . -maxdepth 1 -type f -name "clash-parsers-*.yaml" -print -delete
+          echo "Step 1: Deleting ALL old parser files..."
+          # 只要是这个名字开头的，统统删掉
+          find . -maxdepth 1 -type f -name "clash-parsers-*.yaml" -delete
           
+          echo "Step 2: Downloading the new file..."
           PATTERN="clash-parsers-*.yaml"
+          
           if [ "${{ github.event_name }}" == "release" ]; then
-             TAG="${{ github.event.release.tag_name }}"
-             echo "Downloading from Release Tag: $TAG"
-             gh release download "$TAG" --pattern "$PATTERN" --clobber
+            TAG="${{ github.event.release.tag_name }}"
+            gh release download "$TAG" --pattern "$PATTERN" --clobber
           else
-             echo "Downloading from Latest Release"
-             gh release download --pattern "$PATTERN" --clobber
+            # 手动触发：下载最新的那个 release 文件
+            gh release download --pattern "$PATTERN" --clobber
           fi
           
+          echo "New file downloaded:"
           ls -lh clash-parsers-*.yaml
 
-      # 【步骤 5】提交并推送
-      - name: 🚀 5. Commit and Push
+      # 5. 提交 (文件名变了？内容变了？都会提交！)
+      - name: 🚀 Commit and Push
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
+          # 把刚才的删除操作和下载操作都加入暂存区
           git add .
           
+          # 只有当【文件名】和【内容】完全一模一样时，才跳过
           if git diff --staged --quiet; then
-            echo "⚠️ No changes detected. Skipping push."
+            echo "✅ 仓库里的文件已经是完全一致的（同名且同内容），无需更新。"
           else
-            echo "Committing changes..."
-            git commit -m "Auto-update: Sync parser with release"
-            
-            # 因为步骤 3 已经保证了我们在分支上，这里直接 push 即可
-            echo "Pushing to remote..."
-            git push origin ${{ steps.info.outputs.TARGET_BRANCH }}
-            echo "🎉 Done! Successfully pushed."
+            echo "🔥 检测到变动（文件名变了 或 内容变了），正在更新..."
+            git commit -m "Auto-update: Force replace parser file"
+            git push origin ${{ steps.branch.outputs.TARGET }}
+            echo "🎉 更新成功！"
           fi
