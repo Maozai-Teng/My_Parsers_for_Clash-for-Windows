@@ -13,11 +13,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1️⃣ Checkout 当前分支
       - name: Checkout current branch
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      - name: Show branch info
+        run: |
+          echo "Branch name: ${{ github.ref_name }}"
+
+      # 2️⃣ 获取最新 Release 的 clash-parsers-*.yaml
       - name: Get latest parser from Release
         id: get_parser
         uses: actions/github-script@v7
@@ -39,22 +45,32 @@ jobs:
 
             core.setOutput("asset_url", asset.browser_download_url);
             core.setOutput("asset_name", asset.name);
+            console.log(`Found asset: ${asset.name}`);
 
-      - name: Delete old parser files
-        run: |
-          rm -f clash-parsers-*.yaml || true
-
+      # 3️⃣ 下载最新文件
       - name: Download latest parser file
         run: |
           curl -L -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -o "${{ steps.get_parser.outputs.asset_name }}" \
             "${{ steps.get_parser.outputs.asset_url }}"
 
+      # 4️⃣ 删除旧版本文件，只保留最新下载的
+      - name: Delete old parser files
+        run: |
+          for f in clash-parsers-*.yaml; do
+            if [ "$f" != "${{ steps.get_parser.outputs.asset_name }}" ]; then
+              rm -f "$f"
+              echo "Deleted old parser file: $f"
+            fi
+          done
+
+      # 5️⃣ 设置 git identity
       - name: Set git identity
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
 
+      # 6️⃣ Commit & Push
       - name: Commit and push
         run: |
           git add clash-parsers-*.yaml
