@@ -1,0 +1,99 @@
+name: Sync Parser from Release
+
+# 触发机制：
+# 1. 当发布新 Release (Published) 时自动触发
+# 2. 允许在 Actions 页面手动按按钮触发
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+# 权限设置：必须给予写权限，否则无法推送到仓库
+permissions:
+  contents: write
+
+jobs:
+  sync-file:
+    name: Sync Release File to Repo
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 智能识别目标分支
+      # 如果是发版，则锁定发版的目标分支；如果是手动，则锁定当前分支。
+      - name: 🔍 Determine Target Branch
+        id: branch
+        run: |
+          if [ "${{ github.event_name }}" == "release" ]; then
+            TARGET="${{ github.event.release.target_commitish }}"
+            echo "Trigger: Release Event"
+          else
+            TARGET="${{ github.ref_name }}"
+            echo "Trigger: Manual Dispatch"
+          fi
+          echo "TARGET=$TARGET" >> $GITHUB_OUTPUT
+          echo "✅ Target Branch: $TARGET"
+
+      # 2. 检出代码
+      # fetch-depth: 0 保证获取完整历史，这对后续切换分支至关重要
+      - name: 📥 Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 3. 【核心修正】强制切换分支
+      # 这一步是为了解决 Release 触发时的 "Detached HEAD" 报错问题
+      # 它强制将 Git 环境重置到具体的分支上，而不是游离在 Tag 上
+      - name: 🔧 Fix Git State (Switch to Branch)
+        run: |
+          TARGET="${{ steps.branch.outputs.TARGET }}"
+          echo "Force switching git context to branch: $TARGET"
+          git checkout -B $TARGET origin/$TARGET
+          echo "Current branch status: $(git branch --show-current)"
+
+      # 4. 暴力替换逻辑
+      # 不管旧文件是什么，先删光；然后从 Release 下载最新的。
+      - name: 🔄 Replace Parser File
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "--- Step 1: Delete old files ---"
+          # 删除当前目录下所有以 clash-parsers- 开头的 yaml 文件
+          find . -maxdepth 1 -type f -name "clash-parsers-*.yaml" -print -delete
+          
+          echo "--- Step 2: Download new file ---"
+          PATTERN="clash-parsers-*.yaml"
+          
+          if [ "${{ github.event_name }}" == "release" ]; then
+            # Release 触发：下载【本次】发布的那个版本
+            TAG="${{ github.event.release.tag_name }}"
+            echo "Downloading asset from Tag: $TAG"
+            gh release download "$TAG" --pattern "$PATTERN" --clobber
+          else
+            # 手动触发：下载所有 Release 中【最新】的那个
+            echo "Downloading asset from Latest Release"
+            gh release download --pattern "$PATTERN" --clobber
+          fi
+          
+          echo "--- Result ---"
+          ls -lh clash-parsers-*.yaml
+
+      # 5. 提交并推送
+      # 只要文件名变了，或者内容变了，Git 都会提交。只有完全一模一样才会跳过。
+      - name: 🚀 Commit and Push
+        run: |
+          # 配置 Git 机器人身份
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git add .
+          
+          # 检查是否有变动
+          if git diff --staged --quiet; then
+            echo "✅ No changes detected (File name and content are identical)."
+          else
+            echo "🔥 Changes detected! Committing..."
+            git commit -m "Auto-update: Sync parser file from release"
+            
+            # 推送到我们在第3步锁定的目标分支
+            git push origin ${{ steps.branch.outputs.TARGET }}
+            echo "🎉 Successfully pushed to $TARGET"
+          fi
