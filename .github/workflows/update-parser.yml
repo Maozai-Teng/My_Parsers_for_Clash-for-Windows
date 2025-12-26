@@ -1,0 +1,82 @@
+name: Update Latest Parser File
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-file:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine Target Branch
+        id: branch
+        run: |
+          if [ "${{ github.event_name }}" == "release" ]; then
+            # Release 触发时，获取该 Release 指向的目标分支
+            echo "TARGET_BRANCH=${{ github.event.release.target_commitish }}" >> $GITHUB_OUTPUT
+            echo "Using release target branch: ${{ github.event.release.target_commitish }}"
+          else
+            # 手动触发时，获取当前所在的分支
+            echo "TARGET_BRANCH=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+            echo "Using current manual branch: ${{ github.ref_name }}"
+          fi
+
+      - name: Checkout target branch code
+        uses: actions/checkout@v4
+        with:
+          # 直接检出目标分支，而不是 release 的 tag
+          ref: ${{ steps.branch.outputs.TARGET_BRANCH }}
+
+      - name: Delete Old Files
+        run: |
+          echo "Looking for old parser files to delete..."
+          find . -maxdepth 1 -type f -name "clash-parsers-*.yaml" -print -delete
+          echo "Old files deleted."
+
+      - name: Download New File from Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Downloading the latest asset..."
+          # 定义文件名匹配模式
+          PATTERN="clash-parsers-*.yaml"
+          
+          if [ "${{ github.event_name }}" == "release" ]; then
+            # 如果是发布触发，下载刚刚发布的那个 Release 中的文件
+            TAG="${{ github.event.release.tag_name }}"
+            echo "Triggered by Release. Downloading asset from tag: $TAG"
+            gh release download "$TAG" --pattern "$PATTERN" --clobber
+          else
+            # 如果是手动触发，下载最新的那个 Release 中的文件
+            echo "Triggered Manually. Downloading asset from the Latest Release"
+            gh release download --pattern "$PATTERN" --clobber
+          fi
+          
+          # 检查文件是否下载成功
+          if ! ls clash-parsers-*.yaml 1> /dev/null 2>&1; then
+            echo "::error::Failed to download the parser file!"
+            exit 1
+          fi
+          echo "File downloaded successfully."
+          ls -lh clash-parsers-*.yaml
+
+      - name: Commit and Push Changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git add .
+          
+          # 检查是否有文件变动
+          if git diff --staged --quiet; then
+            echo "No changes detected. The file is already up-to-date."
+          else
+            git commit -m "Auto-update: Replace parser with latest release"
+            # 直接推送到我们检出的目标分支
+            git push
+            echo "Successfully committed and pushed changes to branch ${{ steps.branch.outputs.TARGET_BRANCH }}"
+          fi
