@@ -1,90 +1,106 @@
-name: Auto Update Parser (Universal)
+name: Debug and Force Update
 
 on:
-  # 1. 发布 Release 时触发
   release:
     types: [published]
-  # 2. 手动按按钮时触发
   workflow_dispatch:
 
-# 必须赋予写权限，否则无法推送代码
 permissions:
   contents: write
 
 jobs:
-  universal-update:
+  debug-fix-job:
     runs-on: ubuntu-latest
     steps:
-      # 【第一步：智能识别目标分支】
-      # 无论是发布 Release 还是按按钮，都算出我们到底该操作哪个分支
-      - name: 🧠 Determine Target Branch
-        id: branch
+      # 【步骤 1】识别目标分支，并打印调试信息
+      - name: 🔍 1. Identify Branch & Debug Info
+        id: info
         run: |
+          echo "========== [DEBUG START] =========="
+          echo "Event Name: ${{ github.event_name }}"
+          
+          # 判断目标分支
           if [ "${{ github.event_name }}" == "release" ]; then
-            # 如果是发版，目标就是 Release 指定的分支（Target: main/beta...）
             TARGET="${{ github.event.release.target_commitish }}"
-            echo "Trigger: Release created."
+            echo "Trigger: Release"
+            echo "Release Target (Commitish): $TARGET"
           else
-            # 如果是按按钮，目标就是当前你选中的分支
             TARGET="${{ github.ref_name }}"
-            echo "Trigger: Manual button."
+            echo "Trigger: Manual"
+            echo "Current Ref: $TARGET"
           fi
           
           echo "TARGET_BRANCH=$TARGET" >> $GITHUB_OUTPUT
-          echo "✅ Targeted Branch: $TARGET"
+          echo "Desired Target Branch: $TARGET"
+          echo "========== [DEBUG END] =========="
 
-      # 【第二步：精准检出分支】
-      # 关键点：使用 ref 参数强制检出分支名，彻底避开 Detached HEAD 问题
-      - name: 📥 Checkout Branch Code
+      # 【步骤 2】拉取代码（fetch-depth: 0 保证拉取完整历史，否则无法切换分支）
+      - name: 📥 2. Checkout Code
         uses: actions/checkout@v4
         with:
-          ref: ${{ steps.branch.outputs.TARGET_BRANCH }}
           fetch-depth: 0
 
-      # 【第三步：清理旧文件】
-      - name: 🗑️ Remove Old Parsers
+      # 【步骤 3】🚨 核心修复：强制 Git 切换到分支 🚨
+      # 不管 checkout 处于什么状态，这里手动强制重置到目标分支
+      - name: 🔧 3. Force Switch to Branch
         run: |
-          echo "Cleaning up old files..."
-          # 删掉所有 clash-parsers- 开头的 yaml 文件，只保留 Action 刚要下载的那个
-          find . -maxdepth 1 -type f -name "clash-parsers-*.yaml" -print -delete
+          TARGET="${{ steps.info.outputs.TARGET_BRANCH }}"
+          
+          echo "--- Git Status Before Fix (Likely Detached) ---"
+          git status
+          
+          echo ">>> FORCING GIT TO SWITCH TO BRANCH: $TARGET <<<"
+          # 强制创建(如果不存在)并重置本地分支到远程分支的状态
+          # 这行命令是解决问题的关键，它会把 'HEAD' 强行绑回分支上
+          git checkout -B "$TARGET" "origin/$TARGET"
+          
+          echo "--- Git Status After Fix (Should be on branch) ---"
+          git status
+          
+          # 双重检查：如果还不是分支，直接报错停止，方便排查
+          if [ "$(git symbolic-ref -q HEAD)" != "refs/heads/$TARGET" ]; then
+            echo "❌ ERROR: Failed to switch to branch $TARGET. Still detached!"
+            exit 1
+          else
+            echo "✅ SUCCESS: Confirmed we are strictly on branch '$TARGET'"
+          fi
 
-      # 【第四步：下载最新文件】
-      - name: ⬇️ Download New Asset
+      # 【步骤 4】文件处理（删旧、下新）
+      - name: 📂 4. Replace Files
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          PATTERN="clash-parsers-*.yaml"
+          echo "Deleting old parser files..."
+          find . -maxdepth 1 -type f -name "clash-parsers-*.yaml" -print -delete
           
+          PATTERN="clash-parsers-*.yaml"
           if [ "${{ github.event_name }}" == "release" ]; then
-            # 情况 A: Release 触发，下载【本次】发布的那个版本
-            TAG="${{ github.event.release.tag_name }}"
-            echo "Downloading assets from Release Tag: $TAG"
-            gh release download "$TAG" --pattern "$PATTERN" --clobber
+             TAG="${{ github.event.release.tag_name }}"
+             echo "Downloading from Release Tag: $TAG"
+             gh release download "$TAG" --pattern "$PATTERN" --clobber
           else
-            # 情况 B: 手动触发，下载【最新】的一个 Release
-            echo "Downloading assets from Latest Release"
-            gh release download --pattern "$PATTERN" --clobber
+             echo "Downloading from Latest Release"
+             gh release download --pattern "$PATTERN" --clobber
           fi
           
           ls -lh clash-parsers-*.yaml
 
-      # 【第五步：提交并推送】
-      # 因为第二步已经切到了分支，这里直接 push 即可，适配所有分支
-      - name: 🚀 Commit and Push
+      # 【步骤 5】提交并推送
+      - name: 🚀 5. Commit and Push
         run: |
-          # 配置 Git 身份
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
           git add .
           
-          # 检查是否有变动
           if git diff --staged --quiet; then
-            echo "⚠️ No changes detected. Warehouse is already up to date."
+            echo "⚠️ No changes detected. Skipping push."
           else
-            git commit -m "Auto-update: Sync parser file with release"
+            echo "Committing changes..."
+            git commit -m "Auto-update: Sync parser with release"
             
-            # 直接 push，Git 会自动推送到我们在第二步 checkout 的那个分支
-            git push
-            echo "🎉 Successfully pushed to ${{ steps.branch.outputs.TARGET_BRANCH }}"
+            # 因为步骤 3 已经保证了我们在分支上，这里直接 push 即可
+            echo "Pushing to remote..."
+            git push origin ${{ steps.info.outputs.TARGET_BRANCH }}
+            echo "🎉 Done! Successfully pushed."
           fi
